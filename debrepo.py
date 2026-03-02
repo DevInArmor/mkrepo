@@ -662,6 +662,40 @@ def process_index_units(repo_info, tempdir, index_type, force=False):
     # (some problems encountered during processing).
     malformed_lists = collections.defaultdict(list)
 
+    # Track files that exist in storage
+    existing_files = set()
+    for file_path in repo_info.storage.files('pool'):
+        file_path = file_path.lstrip('/')
+        match = re.match(expr, file_path)
+        if match:
+            mtime = repo_info.storage.mtime(file_path)
+            existing_files.add((file_path, mtime))
+    
+    # Find files recorded in index
+    recorded_files = set()
+    for index in index_list.values():
+        for unit in index.units:
+            if 'Filename' in unit.fields and 'FileTime' in unit.fields:
+                recorded_files.add((unit['Filename'].lstrip('/'), float(unit['FileTime'])))
+    
+    # Find files to delete (in index but not in storage)
+    files_to_delete = recorded_files - existing_files
+    
+    # Remove deleted packages from indices
+    if files_to_delete:
+        print("Found %d file(s) to delete from index" % len(files_to_delete))
+        for file_to_delete, _ in files_to_delete:
+            print("Deleting from index: '%s'" % file_to_delete)
+            # Remove from all indices
+            for key, index in index_list.items():
+                units_to_remove = set()
+                for unit in index.units:
+                    if 'Filename' in unit.fields and unit['Filename'].lstrip('/') == file_to_delete:
+                        units_to_remove.add(unit)
+                # Remove units outside the iteration to avoid modifying set during iteration
+                for unit in units_to_remove:
+                    index.units.remove(unit)
+
     for file_path in repo_info.storage.files('pool'):
         file_path = file_path.lstrip('/')
 
